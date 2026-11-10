@@ -23,5 +23,9 @@
         # 显示成人民币；写 0 则保留 USD 原值。额度卡里的余额是各 provider 自报的
         # 字符串（¥ / $ / 积分），不参与折算。
         cnyRate: 6.8
+        # 在 Magpie 里停用的 provider 名（quota 卡的 provider 字段）。停用后网关不再
+        # 上报它，面板据此把它的额度卡移出列流，其余卡片回流填满空位；重新启用后把
+        # 名字从列表里去掉，卡片自动回来。
+        disabledProviders: []
         # Whether the agent tool `magpie_usage` is registered.
         tool: true

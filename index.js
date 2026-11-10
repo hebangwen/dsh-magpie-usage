@@ -47,6 +47,14 @@ const DEFAULTS = Object.freeze({
    * as strings in each provider's own currency.
    */
   cnyRate: 6.8,
+  /**
+   * Providers switched off in Magpie. The gateway stops reporting them the moment they
+   * are disabled, so the panel cannot tell "turned off" from "vanished": naming them
+   * here lets the board pull those quota cards out of the flow deliberately, and the
+   * remaining cards refill the freed space (multi-column packing). Prune the list when
+   * the provider comes back and its card returns on the next read.
+   */
+  disabledProviders: [],
 })
 
 /** Trim to a finite number, or 0. Gateway counters are sometimes absent on old rows. */
@@ -75,7 +83,11 @@ function resolveConfig(config) {
   const seconds = Number(raw.refreshSeconds)
   const cny = Number(raw.cnyRate)
   const rate = Number.isFinite(cny) && cny >= 0 ? cny : DEFAULTS.cnyRate
+  const off = Array.isArray(raw.disabledProviders)
+    ? [...new Set(raw.disabledProviders.filter((name) => typeof name === 'string' && name !== ''))]
+    : DEFAULTS.disabledProviders
   return {
+    disabledProviders: off,
     gateway: gateway.replace(/\/+$/, ''),
     apiKey: str(raw.apiKey) ?? '',
     period,
@@ -336,6 +348,7 @@ export function apply(ctx, config) {
       period,
       defaults: { period: resolved.period, refreshSeconds: resolved.refreshSeconds },
       currency: resolved.currency,
+      disabledProviders: resolved.disabledProviders,
       usage: trimUsage(usage ?? {}, resolved.currency.rate),
       series: trimSeries(usage?.series, resolved.currency.rate),
       quotas: quotas.status === 'fulfilled' ? trimQuotas(quotas.value) : [],

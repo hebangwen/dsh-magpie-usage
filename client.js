@@ -71,6 +71,12 @@ window.__ModuleLoader__.load({
       'quota.reset': '{t} 后重置',
       'quota.noReset': '没有重置时间',
       'quota.error': '读数失败',
+      'quota.off': '已停用',
+      'quota.offNote': '停用后窗口不再更新，卡片可手动收起；重新启用后自动回来',
+      'quota.hide': '收起',
+      'quota.expand': '展开',
+      'quota.enable': '启用（改配置）',
+      'quota.restore': '恢复 {n} 张收起的卡片',
       'quota.usedLeft': '已用 {used}% · 余 {left}%',
       'models.title': '模型消耗',
       'models.note': '按成本排序，前 6 个',
@@ -138,6 +144,12 @@ window.__ModuleLoader__.load({
       'quota.reset': 'resets in {t}',
       'quota.noReset': 'no reset time',
       'quota.error': 'read failed',
+      'quota.off': 'Disabled',
+      'quota.offNote': "Windows stop updating while it is off; collapse the card or re-enable it and it comes back",
+      'quota.hide': 'Hide',
+      'quota.expand': 'Expand',
+      'quota.enable': 'Enable (edit config)',
+      'quota.restore': 'Restore {n} collapsed',
       'quota.usedLeft': '{used}% used · {left}% left',
       'models.title': 'Spend by model',
       'models.note': 'sorted by cost, top 6',
@@ -404,6 +416,7 @@ window.__ModuleLoader__.load({
 .mu-bar[data-zero="true"] { background: var(--dsw-alias-border-l1); opacity: .5; }
 .mu-bar:hover { opacity: 1; }
 .mu-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.mu-restore-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .mu-quota-grid { column-count: 3; column-gap: 10px; }
 .mu-quota-grid > * {
   break-inside: avoid;
@@ -411,6 +424,23 @@ window.__ModuleLoader__.load({
   margin: 0 0 10px;
 }
 .mu-quota-name { font-size: 13px; font-weight: 600; }
+.mu-quota-name[data-off="true"] { color: var(--dsw-alias-label-secondary); }
+.mu-quota-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.mu-card.mu-quota[data-off="true"] { opacity: .62; }
+.mu-quota-close {
+  appearance: none; cursor: pointer; font: inherit; font-size: 12px; line-height: 1;
+  padding: 2px 7px; border-radius: 7px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: transparent; color: var(--dsw-alias-label-secondary);
+}
+.mu-quota-close:hover { border-color: var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); }
+.mu-quota-btn {
+  appearance: none; cursor: pointer; font: inherit; font-size: 11.5px;
+  padding: 3px 9px; border-radius: 7px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary);
+}
+.mu-quota-btn:hover { border-color: var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); }
 .mu-quota-plan { margin-top: 3px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
 .mu-quota-balance { margin-top: 8px; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .mu-quota-error { margin-top: 8px; font-size: 11.5px; color: var(--dsw-alias-state-warn-primary); line-height: 1.45; word-break: break-word; }
@@ -569,14 +599,26 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** One provider's quota card. 收起 removes it from the flow; the masonry refills. */
     function QuotaCard(props) {
       const { quota, t, masked } = props
+      const [open, setOpen] = useState(true)
       const windows = Array.isArray(quota.windows) ? quota.windows : []
       const readAt = clock(quota.readAt)
+      if (!open) return null
       return h(
         'div',
-        { className: 'mu-card' },
-        h('div', { className: 'mu-quota-name' }, quota.name || quota.provider || '—'),
+        { className: 'mu-card mu-quota' },
+        h(
+          'div',
+          { className: 'mu-quota-head' },
+          h('span', { className: 'mu-quota-name' }, quota.name || quota.provider || '—'),
+          h(
+            'button',
+            { type: 'button', className: 'mu-quota-close', 'aria-label': t('quota.hide'), onClick: () => setOpen(false) },
+            '×',
+          ),
+        ),
         quota.plan === undefined || quota.plan === ''
           ? null
           : h('div', { className: 'mu-quota-plan' }, quota.plan),
@@ -882,7 +924,44 @@ window.__ModuleLoader__.load({
 
       const usage = data?.usage ?? {}
       const series = data?.series ?? []
+      /** Providers the panel user collapsed; session-persistent, not a disable. */
+      const [hiddenProviders, setHiddenProviders] = useState(() => {
+        try {
+          return new Set(JSON.parse(window.localStorage.getItem('magpie-usage:hidden') ?? '[]'))
+        } catch {
+          return new Set()
+        }
+      })
+      useEffect(() => {
+        try {
+          window.localStorage.setItem('magpie-usage:hidden', JSON.stringify([...hiddenProviders]))
+        } catch {
+          /* private mode; session-only */
+        }
+      }, [hiddenProviders])
+      const hideProvider = useCallback((id) => {
+        setHiddenProviders((prev) => {
+          const next = new Set(prev)
+          next.add(id)
+          return next
+        })
+      }, [])
+      const enableProvider = useCallback((id) => {
+        setHiddenProviders((prev) => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      }, [])
       const quotas = data?.quotas ?? []
+      /** Providers the deployment switched off in config; the Host stamps them on the snapshot. */
+      const disabledProviders = new Set(data?.disabledProviders ?? [])
+      /** How many of the CURRENT providers are collapsed right now. */
+      const hiddenCount = quotas.filter((quota, index) => {
+        const id = quota.provider || quota.name || String(index)
+        return hiddenProviders.has(id)
+      }).length
+      const restoreAll = useCallback(() => setHiddenProviders(new Set()), [])
       const models = (data?.models ?? []).slice(0, limits.models)
       const requests = (data?.requests ?? []).slice(0, limits.requests)
       const resultCurrency = data?.currency ?? { code: 'USD', symbol: '$', rate: 1 }
@@ -1078,8 +1157,33 @@ window.__ModuleLoader__.load({
                     ? h('div', { className: 'mu-empty' }, t('quota.empty'))
                     : h(
                         'div',
-                        { className: 'mu-quota-grid' },
-                        quotas.map((quota, index) => h(QuotaCard, { key: `${quota.provider}-${index}`, quota, t, masked })),
+                        null,
+                        hiddenCount > 0
+                          ? h(
+                              'div',
+                              { className: 'mu-restore-row' },
+                              h(
+                                'button',
+                                { type: 'button', className: 'mu-quota-btn', onClick: restoreAll },
+                                t('quota.restore', { n: hiddenCount }),
+                              ),
+                            )
+                          : null,
+                        h(
+                          'div',
+                          { className: 'mu-quota-grid' },
+                          quotas
+                            .filter((quota, index) => {
+                              const id = quota.provider || quota.name || String(index)
+                              // 收起的卡与配置里停用的卡离开列流：剩余卡片立刻填进空出的
+                              // 空间（多列瀑布流自动回流），板上不留洞。
+                              return !(hiddenProviders.has(id) || disabledProviders.has(id))
+                            })
+                            .map((quota, index) => {
+                              const id = quota.provider || quota.name || String(index)
+                              return h(QuotaCard, { key: `${id}-${index}`, quota, t, masked })
+                            }),
+                        ),
                       ),
                 ),
 
