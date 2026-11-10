@@ -692,6 +692,9 @@ window.__ModuleLoader__.load({
 
     // ------------------------------------------------------------------ 面板
 
+    /** Measure before paint where the browser allows it, so the first frame is not a stack. */
+    const useMeasureEffect = typeof window === 'undefined' ? useEffect : React.useLayoutEffect
+
     /** How many rows each short window can still afford to show. */
     const ROW_LIMITS = {
       normal: { requests: 12, models: 6 },
@@ -709,7 +712,7 @@ window.__ModuleLoader__.load({
     function useDensity() {
       const ref = useRef(null)
       const [density, setDensity] = useState('normal')
-      useEffect(() => {
+      useMeasureEffect(() => {
         const node = ref.current
         if (node === null || node === undefined) return undefined
         const measure = () => {
@@ -747,7 +750,7 @@ window.__ModuleLoader__.load({
     function useColumnCount(minWidth, gap) {
       const ref = useRef(null)
       const [count, setCount] = useState(1)
-      useEffect(() => {
+      useMeasureEffect(() => {
         const node = ref.current
         if (node === null || node === undefined) return undefined
         const measure = () => {
