@@ -36,6 +36,9 @@ window.__ModuleLoader__.load({
       'panel.title': 'Magpie 用量',
       'panel.subtitle': '本机 Magpie 网关的账本：调用、成本、token、额度窗口与最近请求',
       'action.refresh': '刷新',
+      'mask.on': '打码',
+      'mask.off': '显示原值',
+      'mask.title': '把金额与账号打码后再截图',
       'action.retrying': '读取中…',
       'auto.label': '自动刷新',
       'auto.off': '关闭',
@@ -100,6 +103,9 @@ window.__ModuleLoader__.load({
       'panel.title': 'Magpie Usage',
       'panel.subtitle': 'The ledger of the local Magpie gateway: calls, cost, tokens, quota windows and recent requests',
       'action.refresh': 'Refresh',
+      'mask.on': 'Mask',
+      'mask.off': 'Show values',
+      'mask.title': 'Mask money and handles before taking a screenshot',
       'action.retrying': 'Reading…',
       'auto.label': 'Auto',
       'auto.off': 'Off',
@@ -198,7 +204,24 @@ window.__ModuleLoader__.load({
       return String(Math.round(n))
     }
 
-    function money(value, symbol = '$') {
+    /** What a masked figure turns into: same currency sign, no digits. */
+    const MASK = '•••'
+
+    /** Mask every digit but keep the shape: ¥20.01 → ¥••.••, 329.9717 积分 → •••.•••• 积分. */
+    function maskDigits(text) {
+      return typeof text === 'string' ? text.replace(/[0-9]/g, '•') : text
+    }
+
+    /** Account handles ("API key …vIp4") keep their prefix and lose the tail. */
+    function maskHandle(text) {
+      if (typeof text !== 'string' || text === '') return text
+      const cut = text.search(/…|\.{3}/)
+      if (cut >= 0) return `${text.slice(0, cut + 1)}${MASK}`
+      return text.replace(/[A-Za-z0-9]{4,}/g, MASK)
+    }
+
+    function money(value, symbol = '$', masked = false) {
+      if (masked) return `${symbol}${MASK}`
       const n = Number(value)
       if (!Number.isFinite(n)) return '—'
       if (n === 0) return `${symbol}0.00`
@@ -327,6 +350,10 @@ window.__ModuleLoader__.load({
 .mu-btn:hover:not(:disabled) { border-color: var(--dsw-alias-border-l2); }
 .mu-btn:disabled { opacity: .55; cursor: default; }
 .mu-btn[data-busy="true"] { color: var(--dsw-alias-label-secondary); }
+.mu-btn[data-on="true"] {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-brand-primary);
+}
 .mu-stamp { font-size: 12px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .mu-banner {
   margin-top: 14px; padding: 10px 13px; border-radius: 9px; font-size: 12.5px; line-height: 1.5;
@@ -501,7 +528,7 @@ window.__ModuleLoader__.load({
     }
 
     function CostChart(props) {
-      const { series, t, hourly, symbol } = props
+      const { series, t, hourly, symbol, masked } = props
       const rows = Array.isArray(series) ? series : []
       if (rows.length === 0) return h('div', { className: 'mu-empty' }, t('chart.empty'))
       let peak = 0
@@ -528,7 +555,7 @@ window.__ModuleLoader__.load({
               className: 'mu-bar',
               'data-zero': cost <= 0 ? 'true' : 'false',
               style: { height },
-              title: `${axisLabel(row.label, hourly)}: ${money(cost, symbol)} · ${compact(row.calls)} calls`,
+              title: `${axisLabel(row.label, hourly)}: ${money(cost, symbol, masked)} · ${compact(row.calls)} calls`,
             })
           }),
         ),
@@ -536,14 +563,14 @@ window.__ModuleLoader__.load({
           'div',
           { className: 'mu-axis' },
           h('span', null, axisLabel(rows[0]?.label, hourly)),
-          h('span', null, money(peak, symbol)),
+          h('span', null, money(peak, symbol, masked)),
           h('span', null, axisLabel(rows[rows.length - 1]?.label, hourly)),
         ),
       )
     }
 
     function QuotaCard(props) {
-      const { quota, t } = props
+      const { quota, t, masked } = props
       const windows = Array.isArray(quota.windows) ? quota.windows : []
       const readAt = clock(quota.readAt)
       return h(
@@ -555,13 +582,13 @@ window.__ModuleLoader__.load({
           : h('div', { className: 'mu-quota-plan' }, quota.plan),
         quota.user === undefined || quota.user === ''
           ? null
-          : h('div', { className: 'mu-quota-plan' }, quota.user),
+          : h('div', { className: 'mu-quota-plan' }, masked ? maskHandle(quota.user) : quota.user),
         quota.balance === undefined || quota.balance === ''
           ? null
           : h(
               'div',
               { className: 'mu-quota-balance' },
-              quota.balance,
+              masked ? maskDigits(quota.balance) : quota.balance,
               readAt === '' ? null : h('span', { className: 'mu-section-note' }, ` · ${t('quota.readAt', { t: readAt })}`),
             ),
         quota.error === undefined || quota.error === ''
@@ -607,7 +634,7 @@ window.__ModuleLoader__.load({
     }
 
     function ModelsTable(props) {
-      const { models, t, symbol } = props
+      const { models, t, symbol, masked } = props
       const rows = Array.isArray(models) ? models : []
       if (rows.length === 0) return h('div', { className: 'mu-empty' }, t('models.empty'))
       return h(
@@ -642,7 +669,7 @@ window.__ModuleLoader__.load({
                 h('td', { className: 'mu-col-optional' }, row.sub || row.provider || '—'),
                 h('td', { 'data-num': 'true' }, compact(row.calls)),
                 h('td', { 'data-num': 'true' }, `${compact(row.input)} / ${compact(row.output)}`),
-                h('td', { 'data-num': 'true' }, money(row.cost, symbol)),
+                h('td', { 'data-num': 'true' }, money(row.cost, symbol, masked)),
               )
             }),
           ),
@@ -651,7 +678,7 @@ window.__ModuleLoader__.load({
     }
 
     function RequestsTable(props) {
-      const { requests, t, symbol } = props
+      const { requests, t, symbol, masked } = props
       const rows = Array.isArray(requests) ? requests : []
       if (rows.length === 0) return h('div', { className: 'mu-empty' }, t('requests.empty'))
       return h(
@@ -688,7 +715,7 @@ window.__ModuleLoader__.load({
                 h('td', { 'data-wrap': 'true', title: row.req || row.model }, row.model || '—'),
                 h('td', { 'data-num': 'true' }, `${compact(row.in)} / ${compact(row.out)}`),
                 h('td', { 'data-num': 'true' }, duration(row.ms)),
-                h('td', { 'data-num': 'true' }, row.priced === false ? '—' : money(row.cost, symbol)),
+                h('td', { 'data-num': 'true' }, row.priced === false ? '—' : money(row.cost, symbol, masked)),
                 h('td', { 'data-num': 'true' }, h('span', { className: 'mu-status', 'data-bad': ok ? 'false' : 'true' }, String(row.status))),
               )
             }),
@@ -751,6 +778,20 @@ window.__ModuleLoader__.load({
       const ctx = props.ctx
       const [rootRef, density] = useDensity()
       const limits = ROW_LIMITS[density] ?? ROW_LIMITS.normal
+      const [masked, setMasked] = useState(() => {
+        try {
+          return window.localStorage.getItem('magpie-usage:masked') === '1'
+        } catch {
+          return false
+        }
+      })
+      useEffect(() => {
+        try {
+          window.localStorage.setItem('magpie-usage:masked', masked ? '1' : '0')
+        } catch {
+          /* private mode refuses writes; the toggle still works for this session */
+        }
+      }, [masked])
       const lang = useLang(ctx)
       const t = useCallback((key, params) => translate(lang, key, params), [lang])
       const [period, setPeriod] = useState(PERIODS.includes(props.period) ? props.period : 'today')
@@ -898,6 +939,18 @@ window.__ModuleLoader__.load({
               { className: 'mu-controls' },
               h('div', { className: 'mu-seg', role: 'group', 'aria-label': 'period' }, periodButtons),
               h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'mu-btn',
+                  'data-on': masked ? 'true' : 'false',
+                  'aria-pressed': masked ? 'true' : 'false',
+                  title: t('mask.title'),
+                  onClick: () => setMasked(!masked),
+                },
+                masked ? t('mask.off') : t('mask.on'),
+              ),
+              h(
                 'select',
                 {
                   className: 'mu-select',
@@ -959,7 +1012,7 @@ window.__ModuleLoader__.load({
                   }),
                   h(Stat, {
                     label: t('stat.cost'),
-                    value: money(usage.cost, symbol),
+                    value: money(usage.cost, symbol, masked),
                     sub: [usage.unpriced > 0 ? `${compact(usage.unpriced)} unpriced` : '', rateNote].filter(Boolean).join(' · '),
                   }),
                   h(Stat, {
@@ -1004,12 +1057,12 @@ window.__ModuleLoader__.load({
                       'div',
                       { className: 'mu-section-note' },
                       t('chart.note', {
-                        peak: money(Math.max(0, ...series.map((row) => Number(row.cost) || 0)), symbol),
-                        total: money(series.reduce((sum, row) => sum + (Number(row.cost) || 0), 0), symbol),
+                        peak: money(Math.max(0, ...series.map((row) => Number(row.cost) || 0)), symbol, masked),
+                        total: money(series.reduce((sum, row) => sum + (Number(row.cost) || 0), 0), symbol, masked),
                       }),
                     ),
                   ),
-                  h(CostChart, { series, t, hourly: usage.period === 'today', symbol }),
+                  h(CostChart, { series, t, hourly: usage.period === 'today', symbol, masked }),
                 ),
 
                 h(
@@ -1026,7 +1079,7 @@ window.__ModuleLoader__.load({
                     : h(
                         'div',
                         { className: 'mu-quota-grid' },
-                        quotas.map((quota, index) => h(QuotaCard, { key: `${quota.provider}-${index}`, quota, t })),
+                        quotas.map((quota, index) => h(QuotaCard, { key: `${quota.provider}-${index}`, quota, t, masked })),
                       ),
                 ),
 
@@ -1039,7 +1092,7 @@ window.__ModuleLoader__.load({
                     h('div', { className: 'mu-section-title' }, t('models.title')),
                     h('div', { className: 'mu-section-note' }, t('models.note')),
                   ),
-                  h(ModelsTable, { models, t, symbol }),
+                  h(ModelsTable, { models, t, symbol, masked }),
                 ),
 
                 h(
@@ -1051,7 +1104,7 @@ window.__ModuleLoader__.load({
                     h('div', { className: 'mu-section-title' }, t('requests.title')),
                     h('div', { className: 'mu-section-note' }, t('requests.note')),
                   ),
-                  h(RequestsTable, { requests, t, symbol }),
+                  h(RequestsTable, { requests, t, symbol, masked }),
                 ),
 
                 h(
