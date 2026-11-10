@@ -340,10 +340,18 @@ window.__ModuleLoader__.load({
 }
 .mu-banner code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .mu-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-  gap: var(--mu-gap); margin-top: calc(var(--mu-pad-y) * 0.7);
-  /* Content-sized, not row-sized: two cards in one row do not have to end at the same baseline. */
-  align-items: start;
+  /* Multi-column, not a grid: a grid pins every card in a row to the tallest one and
+     leaves a hole under the short ones. Columns pack the next card into whatever
+     vertical space is left, so unequal heights stop costing whitespace. The column
+     count is measured in JS because CSS cannot ask for "as many as fit" and also
+     stretch them to the container width. */
+  column-gap: var(--mu-gap);
+  margin-top: calc(var(--mu-pad-y) * 0.7);
+}
+.mu-grid > * {
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin: 0 0 var(--mu-gap);
 }
 .mu-card {
   background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
@@ -368,10 +376,11 @@ window.__ModuleLoader__.load({
 .mu-bar[data-zero="true"] { background: var(--dsw-alias-border-l1); opacity: .5; }
 .mu-bar:hover { opacity: 1; }
 .mu-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
-.mu-quota-grid {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(252px, 1fr)); gap: 10px;
-  /* A provider with three windows is taller than one with none; let it be. */
-  align-items: start;
+.mu-quota-grid { column-gap: 10px; }
+.mu-quota-grid > * {
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin: 0 0 10px;
 }
 .mu-quota-name { font-size: 13px; font-weight: 600; }
 .mu-quota-plan { margin-top: 3px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
@@ -728,9 +737,47 @@ window.__ModuleLoader__.load({
       return [ref, density]
     }
 
+    /**
+     * How many equal columns fit, given a minimum card width.
+     *
+     * `repeat(auto-fit, minmax(...))` answers a different question — it also leaves the
+     * leftover pixels unassigned. Counting here and setting `column-count` gives full-width
+     * columns for the multi-column (masonry) packing the card rows use.
+     */
+    function useColumnCount(minWidth, gap) {
+      const ref = useRef(null)
+      const [count, setCount] = useState(1)
+      useEffect(() => {
+        const node = ref.current
+        if (node === null || node === undefined) return undefined
+        const measure = () => {
+          const width = node.getBoundingClientRect().width
+          setCount(width > 0 ? Math.max(1, Math.floor((width + gap) / (minWidth + gap))) : 1)
+        }
+        measure()
+        let observer
+        if (typeof ResizeObserver !== 'undefined') {
+          observer = new ResizeObserver(measure)
+          observer.observe(node)
+        }
+        if (typeof window !== 'undefined') window.addEventListener('resize', measure)
+        return () => {
+          try {
+            observer?.disconnect()
+          } catch {
+            /* already gone */
+          }
+          if (typeof window !== 'undefined') window.removeEventListener('resize', measure)
+        }
+      }, [minWidth, gap])
+      return [ref, count]
+    }
+
     function Panel(props) {
       const ctx = props.ctx
       const [rootRef, density] = useDensity()
+      const [statRef, statColumns] = useColumnCount(168, 10)
+      const [quotaRef, quotaColumns] = useColumnCount(252, 10)
       const limits = ROW_LIMITS[density] ?? ROW_LIMITS.normal
       const lang = useLang(ctx)
       const t = useCallback((key, params) => translate(lang, key, params), [lang])
@@ -927,7 +974,7 @@ window.__ModuleLoader__.load({
                 null,
                 h(
                   'div',
-                  { className: 'mu-grid' },
+                  { className: 'mu-grid', ref: statRef, style: { columnCount: statColumns } },
                   h(Stat, {
                     label: t('stat.calls'),
                     value: compact(usage.calls),
@@ -1004,7 +1051,11 @@ window.__ModuleLoader__.load({
                   ),
                   quotas.length === 0
                     ? h('div', { className: 'mu-empty' }, t('quota.empty'))
-                    : h('div', { className: 'mu-quota-grid' }, quotas.map((quota, index) => h(QuotaCard, { key: `${quota.provider}-${index}`, quota, t }))),
+                    : h(
+                        'div',
+                        { className: 'mu-quota-grid', ref: quotaRef, style: { columnCount: quotaColumns } },
+                        quotas.map((quota, index) => h(QuotaCard, { key: `${quota.provider}-${index}`, quota, t })),
+                      ),
                 ),
 
                 h(

@@ -7,6 +7,7 @@
 - 额度卡片：每个 provider 的余额、5 小时 / 7 天 / 月度窗口进度条与重置倒计时
 - 模型消耗 Top N、最近请求流水
 - 面板会**按可用高度自动收缩**：窗口矮的时候压缩图表高度、行数和留白，而不是把内容推出视口
+- 卡片按多列流动排布：卡片之间不等高，下一张会填进上一列剩下的空当，不留瀑布空洞
 - 另外给 Agent 一个同名工具 `magpie_usage`，读的是同一份快照
 
 ## 为什么要有它
@@ -25,10 +26,10 @@ plugin_manager  action=install_bundle  target=/absolute/path/to/dsh-magpie-usage
 
 它会把这个目录 link 进当前 profile、登记 bundle，并立刻生效。装完刷新一次页面（客户端 bundle 不像 Host 侧那样热更）。
 
-仓库里这份代码在 [blog-demo-codes/dsh-magpie-usage](https://github.com/hebangwen/blog-demo-codes/tree/main/dsh-magpie-usage)，直接 clone 下来指向那个目录即可：
+也可以直接 clone 这个仓库，把插件目录指给 `install_bundle`：
 
 ```bash
-git clone https://github.com/hebangwen/blog-demo-codes.git
+git clone https://github.com/hebangwen/dsh-magpie-usage.git
 # target = <clone>/dsh-magpie-usage
 ```
 
@@ -86,6 +87,8 @@ patch 里的行 id 是 `magpie-usage`，在 profile 的 `cordis.patch.yml` 里�
 面板在根节点上挂一个 `ResizeObserver`，把自己的高度分成三档（`normal` / `tight` / `short`），通过 `data-density` 驱动一组 CSS 变量（`--mu-chart`、`--mu-pad-y`、`--mu-section`…），同时按档位截断表格行数（12 / 8 / 5 条请求，6 / 5 / 4 个模型）、在 `short` 档隐藏次要列与说明文字。柱状图高度用百分比，只由 `--mu-chart` 决定，不需要第二处常数。
 
 槽位高度若解析成 auto（`height: 100%` 的常见退化），量到的 0 会退回视口高度，所以嵌在窄栏里也不会突然变成「一屏塞不下」。
+
+卡片区域不用 CSS Grid：Grid 会把同一行的卡片拉到最高那张的高度，短卡下面留一个洞。改成多列（`column-count` + `break-inside: avoid`）后，内容按列往下流，下一张卡自然填进上一列的空当；列数由量到的容器宽度算出，所以既填满宽度又不留右侧空隙。
 
 ## 文件
 
