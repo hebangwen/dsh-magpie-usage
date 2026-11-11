@@ -63,6 +63,7 @@ window.__ModuleLoader__.load({
       'chart.title.day': '每日成本',
       'chart.note': '峰值 {peak} · 合计 {total}',
       'chart.empty': '这个周期还没有产生调用。',
+      'chart.clickHint': '点击柱子看这一桶的金额',
       'quota.title': '额度与余额',
       'quota.note': 'Magpie 自己读到的窗口，只读',
       'quota.empty': '网关没有报出可显示的额度。',
@@ -136,6 +137,7 @@ window.__ModuleLoader__.load({
       'chart.title.day': 'Daily cost',
       'chart.note': 'peak {peak} · total {total}',
       'chart.empty': 'No calls in this period yet.',
+      'chart.clickHint': 'Click a bar for its amount',
       'quota.title': 'Quota and balance',
       'quota.note': "Windows as Magpie read them, read-only",
       'quota.empty': 'The gateway reported no quota to show.',
@@ -415,7 +417,15 @@ window.__ModuleLoader__.load({
 .mu-bar { flex: 1 1 0; min-width: 0; background: var(--dsw-alias-brand-primary); border-radius: 2px 2px 0 0; opacity: .78; }
 .mu-bar[data-zero="true"] { background: var(--dsw-alias-border-l1); opacity: .5; }
 .mu-bar:hover { opacity: 1; }
+.mu-bar[data-selected="true"] { opacity: 1; outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
+.mu-bars[data-clickable="true"] .mu-bar { cursor: pointer; }
 .mu-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.mu-picked {
+  margin-top: 7px; font-size: 12px; color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums; text-align: center; line-height: 1.4;
+}
+.mu-picked b { font-weight: 600; }
+.mu-picked[data-masked="true"] { color: var(--dsw-alias-label-secondary); letter-spacing: .12em; }
 .mu-restore-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .mu-quota-grid { column-count: 3; column-gap: 10px; }
 .mu-quota-grid > * {
@@ -560,6 +570,7 @@ window.__ModuleLoader__.load({
     function CostChart(props) {
       const { series, t, hourly, symbol, masked } = props
       const rows = Array.isArray(series) ? series : []
+      const [picked, setPicked] = useState(null)
       if (rows.length === 0) return h('div', { className: 'mu-empty' }, t('chart.empty'))
       let peak = 0
       let total = 0
@@ -569,12 +580,14 @@ window.__ModuleLoader__.load({
         total += cost
       }
       const scale = peak > 0 ? peak : 1
+      const row = picked !== null && picked >= 0 && picked < rows.length ? rows[picked] : null
+      const pickedCost = row === null ? null : Number(row.cost) || 0
       return h(
         'div',
         { className: 'mu-chart-card' },
         h(
           'div',
-          { className: 'mu-bars' },
+          { className: 'mu-bars', 'data-clickable': 'true' },
           rows.map((row, index) => {
             const cost = Number(row.cost) || 0
             // Percent, not pixels: the bar area's height comes from --mu-chart, and the
@@ -584,8 +597,18 @@ window.__ModuleLoader__.load({
               key: `${row.time}-${index}`,
               className: 'mu-bar',
               'data-zero': cost <= 0 ? 'true' : 'false',
+              'data-selected': picked === index ? 'true' : 'false',
+              role: 'button',
+              tabIndex: 0,
+              'aria-label': `${axisLabel(row.label, hourly)} ${money(cost, symbol, masked)}`,
               style: { height },
               title: `${axisLabel(row.label, hourly)}: ${money(cost, symbol, masked)} · ${compact(row.calls)} calls`,
+              onClick: () => setPicked(picked === index ? null : index),
+              onKeyDown: (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                setPicked(picked === index ? null : index)
+              },
             })
           }),
         ),
@@ -596,6 +619,22 @@ window.__ModuleLoader__.load({
           h('span', null, money(peak, symbol, masked)),
           h('span', null, axisLabel(rows[rows.length - 1]?.label, hourly)),
         ),
+        row !== null
+          ? h(
+              'div',
+              { className: 'mu-picked', 'data-masked': masked ? 'true' : 'false' },
+              masked
+                ? `${axisLabel(row.label, hourly)} · ${symbol}${MASK}`
+                : h(
+                    'span',
+                    null,
+                    axisLabel(row.label, hourly),
+                    ' · ',
+                    h('b', null, money(pickedCost, symbol, false)),
+                    ` · ${compact(row.calls)} ${t('stat.calls')} · ${compact(row.input)}/${compact(row.output)} tok`,
+                  ),
+            )
+          : h('div', { className: 'mu-picked', style: { color: 'var(--dsw-alias-label-secondary)' } }, t('chart.clickHint')),
       )
     }
 
